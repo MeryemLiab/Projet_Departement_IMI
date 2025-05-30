@@ -1,0 +1,152 @@
+import os
+import numpy as np
+import trimesh
+from PIL import Image
+import cv2
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import plotly.graph_objects as go
+from pyransac3d import Plane
+
+
+
+# Loading the images
+
+images = []
+n =   # number of images
+for i in range(n):
+    image = cv2.imread(f"image_path.jpg")
+    images.append(image)
+input_height, input_width, _ = image.shape
+
+
+# Load a 3D mesh from a GLB file:
+mesh = trimesh.load("scene.glb")
+# Extract individual geometries from the loaded scene:
+geometries = list(mesh.geometry.values())
+
+
+# Finding the ceiling plane equation with RANSAC applied to the point cloud
+all_points = []
+# Collect all points from the ceiling point cloud:
+for name, geometry in mesh.geometry.items():
+    if isinstance(geometry, trimesh.PointCloud):
+        points = geometry.vertices
+        all_points.append(points)
+all_points = np.vstack(all_points)
+# # Then filter the highest points (top 20% in Z) to ensure they are close to the ceiling (used to define the ceiling plane)
+# # !!! This assumes that Mast3R puts the z axis more or less along the vertical direction, pointing up.
+# z_threshold = np.percentile(all_points[:, 2], 20)
+# top_points = all_points[all_points[:, 2] >= z_threshold]
+# RANSAC will find the correct points anyway:
+top_points = all_points
+# RANSAC to fit the ceiling plane and get its equation:
+plane_model = Plane()
+plane_equation, inliers = plane_model.fit(top_points, thresh=0.00001)
+plane_equation = np.array(plane_equation)
+ceiling_points = top_points[inliers]
+print("%d inliers" % (len(inliers)))
+
+
+""" Visualizing the found ceiling plane and the point cloud """
+trace_points = []
+trace_meshes = []
+
+colors = ['red', 'green', 'blue', 'yellow', 'cyan', 'magenta']
+
+color_counter = 0
+
+camera_id = 0
+# This loop is used to plot the ceiling point cloud + camera positions
+for name, geometry in mesh.geometry.items():
+    # Here, the ceiling
+    if isinstance(geometry, trimesh.PointCloud):
+        num_points = min(1500, len(geometry.vertices)) # je trace uniquement 1500 et que je choisis de façon aléatoire sinon j'ai une erreur de stockage sur vscode
+        sampled_points = np.random.choice(len(geometry.vertices), num_points, replace=False)
+        points = geometry.vertices[sampled_points]
+        trace_points.append(go.Scatter3d(
+            x=points[:, 0],
+            y=points[:, 1],
+            z=points[:, 2],
+            mode='markers',
+            marker=dict(color=colors[color_counter % len(colors)], size=2),
+            name=f"PointCloud {name}"
+        ))
+        color_counter += 1
+
+    # And here, the camera positions
+    elif isinstance(geometry, trimesh.Trimesh):
+        for face in geometry.faces:
+            vertices = geometry.vertices[face]
+            if len(np.unique(vertices, axis=0)) == 3:
+                trace_meshes.append(go.Mesh3d(
+                    x=vertices[:, 0],
+                    y=vertices[:, 1],
+                    z=vertices[:, 2],
+                    color=colors[camera_id % len(colors)],
+                    opacity=1,
+                    name=f"Camera #{camera_id}"
+                ))
+        # this changes the color only when we move to the next camera.
+        # --> image plane and pyramid of one camera are shown in the same color:
+        if len(geometry.faces) == 48: 
+            camera_id += 1
+
+# This part is for plotting the ceiling plane:
+xlim = [top_points[:, 0].min(), top_points[:, 0].max()]
+ylim = [top_points[:, 1].min(), top_points[:, 1].max()]
+xx, yy = np.meshgrid(np.linspace(xlim[0], xlim[1], 10), np.linspace(ylim[0], ylim[1], 10))
+a, b, c, d = plane_equation
+zz = (-a * xx - b * yy - d) / c
+trace_meshes.append(go.Surface(
+    x=xx, y=yy, z=zz, opacity=0.5, colorscale='Oranges', showscale=False,
+    name='Ceiling plane'
+))
+
+# Sets the ranges so that the scale is the same for the 3 axes.
+# This avoids distorting the visualization:
+xlim = [points[:, 0].min(), points[:, 0].max()]
+ylim = [points[:, 1].min(), points[:, 1].max()]
+zlim = [points[:, 2].min(), points[:, 2].max()]
+dx = xlim[1] - xlim[0]
+dy = ylim[1] - ylim[0]
+dz = zlim[1] - zlim[0]
+if dx >= dy and dx >= dz:
+    xmin = (xlim[0]+xlim[1])/2-dx/2
+    xmax = (xlim[0]+xlim[1])/2+dx/2
+    ymin = (ylim[0]+ylim[1])/2-dx/2
+    ymax = (ylim[0]+ylim[1])/2+dx/2
+    zmin = (zlim[0]+zlim[1])/2-dx/2
+    zmax = (zlim[0]+zlim[1])/2+dx/2
+elif dy >= dx and dy >= dz:
+    xmin = (xlim[0]+xlim[1])/2-dy/2
+    xmax = (xlim[0]+xlim[1])/2+dy/2
+    ymin = (ylim[0]+ylim[1])/2-dy/2
+    ymax = (ylim[0]+ylim[1])/2+dy/2
+    zmin = (zlim[0]+zlim[1])/2-dy/2
+    zmax = (zlim[0]+zlim[1])/2+dy/2
+else:
+    xmin = (xlim[0]+xlim[1])/2-dz/2
+    xmax = (xlim[0]+xlim[1])/2+dz/2
+    ymin = (ylim[0]+ylim[1])/2-dz/2
+    ymax = (ylim[0]+ylim[1])/2+dz/2
+    zmin = (zlim[0]+zlim[1])/2-dz/2
+    zmax = (zlim[0]+zlim[1])/2+dz/2
+    
+# Code to plot everything:
+layout = go.Layout(
+    scene=dict(
+        xaxis_title='X',
+        yaxis_title='Y',
+        zaxis_title='Z',
+        xaxis=dict(range=[xmin,xmax]),
+        yaxis=dict(range=[ymin,ymax]),
+        zaxis=dict(range=[zmin,zmax])
+    ),
+    title='Cameras, point cloud, and estimated ceiling plane',
+    showlegend=True
+)
+
+fig = go.Figure(data=trace_points + trace_meshes, layout=layout)
+
+fig.show()
