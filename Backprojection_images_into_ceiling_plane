@@ -1,4 +1,10 @@
 def plane_line_intersection(plane_equation, P1, P2):
+    """
+    Computes the intersection point between a line and a plane.
+    plane: (a, b, c, d) coefficients of the plane equation ax + by + cz + d = 0
+    point_on_line1, point_on_line2: two points defining the line
+    Returns: intersection point as a tuple (x, y, z), or None if the line is parallel.
+    """
     a, b, c, d = plane_equation
     # The coordinates of the two points defining the line:
     x1, y1, z1 = P1
