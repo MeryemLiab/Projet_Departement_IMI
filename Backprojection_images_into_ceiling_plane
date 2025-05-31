@@ -1,27 +1,26 @@
 def plane_line_intersection(plane_equation, P1, P2):
     """
-    Computes the intersection point between a line and a plane.
-    plane: (a, b, c, d) coefficients of the plane equation ax + by + cz + d = 0
-    point_on_line1, point_on_line2: two points defining the line
-    Returns: intersection point as a tuple (x, y, z), or None if the line is parallel.
+    Compute the intersection point between a line and a plane.
+    Parameters:
+        plane_equation (tuple): Coefficients (a, b, c, d) of the plane equation: ax + by + cz + d = 0
+        P1, P2 (tuple): Two 3D points (x, y, z) defining the line segment
+    Returns:
+        tuple or None: Intersection point (x, y, z) if it exists, or None if the line is parallel to the plane.
     """
     a, b, c, d = plane_equation
     # The coordinates of the two points defining the line:
     x1, y1, z1 = P1
     x2, y2, z2 = P2
     
-    # Compute the denominator of the parametric intersection formula:
     denominator = a * (x2 - x1) + b * (y2 - y1) + c * (z2 - z1)
-    
-    # Check if the line is parallel to the plane:
+
     if np.abs(denominator) < 1e-6:
-        print("The line is parallel to the plane (no intersection).")
+        # Line and plane are parallel; no intersection
         return None
-    
-    # Compute the parameter t for the point of intersection:
+
     t = -(a * x1 + b * y1 + c* z1 + d) / denominator
     
-    # Calculate the intersection point:
+    # Compute the intersection point using parametric form of the line
     intersection = (
         x1 + t * (x2 - x1),
         y1 + t * (y2 - y1),
@@ -34,81 +33,68 @@ def plane_line_intersection(plane_equation, P1, P2):
 valid_image_corners_2d = []
 backprojections = []
 
-# Looping over the geometries representing the cameras:
-for i in range(k): #k is the number of images
+# Process each camera geometry
+for i in range(k): # k = number of your images
     camera_plane = geometries[2*i+1].vertices
     camera_center = geometries[2*(i+1)].vertices[6]
     image_center_3d = np.average(camera_plane, axis=0)
+
+    # Ensure the plane normal faces the camera
     plane_orientation = np.dot(plane_equation[0:3], image_center_3d-camera_center)
     if plane_orientation > 0:
         plane_equation = -1 * plane_equation
-        
+
+    # Initialize 3D corners of the visible image region
     valid_image_corners_3d = np.copy(camera_plane)
+
     corners_2d = np.array([
-        [0, input_height],
-        [input_width, input_height],        
-        [input_width, 0],
-        [0, 0],
+        [0, input_height],               # bottom-left
+        [input_width, input_height],    # bottom-right
+        [input_width, 0],               # top-right
+        [0, 0],                          # top-left
     ])
     
-    # I am assuming that rays 
-    #   camera_center -> camera_plane[2] and
-    #   camera_center -> camera_plane[3]
-    # already point toward the ceiling
-
-    # for 2 corners of the image A and B, and C the camera center,
-    # taking B = camera_plane[2] or camera_plane[3]
-    # CB points towards the ceiling,
-    # I check if CA also points towards the ceiling.
-    # If not, I look for a point Anew = (1-u) * A + u * B between A and B
-    # such that ray C->Anew points towards the ceiling with a small angle (with cosine = -epsilon, to keep most of the image)
-    # the cosine between CAnew and the normal n to the plane is
-    #   CAnew . n / ||CAnew||
-    # I approximate ||CAnew|| by ||CA||
-    # I get u = (-epsilon ||CA|| - OA.n) / (AB.n)
-    
-    # When epsilon decreases toward 0, we capture more of the images, but we risk more distortion:
+    # Define epsilon: smaller values retain more of the image,
+    # but may lead to higher distortion or ceiling occlusion.
     epsilon = 0.1
     
+
+    # Adjust corner 0 if its ray points away from the ceiling
     A = camera_plane[0]
     C = camera_center
     n = plane_equation[:3]
-    I = plane_line_intersection(plane_equation,  C, A)
-    z = np.dot(A-C, I-C)
-    if z < 0: 
-        B = camera_plane[3]
-        CA = A-C
-        AB = B-A
-        u = - (epsilon * np.linalg.norm(CA) + np.dot(n, CA)) / np.dot(AB,n)
-        valid_image_corners_3d[0] = (1-u) * A + u * B
-        corners_2d[0] = [0, (1-u) * input_height]
+    I = plane_line_intersection(plane_equation, C, A)
+    if np.dot(A - C, I - C) < 0:
+        B = camera_plane[3]  # adjacent corner
+        CA = A - C
+        AB = B - A
+        u = - (epsilon * np.linalg.norm(CA) + np.dot(n, CA)) / np.dot(AB, n)
+        valid_image_corners_3d[0] = (1 - u) * A + u * B
+        corners_2d[0] = [0, (1 - u) * input_height]
         
-    A = camera_plane[1]
-    I = plane_line_intersection(plane_equation,  C, A)
-    z = np.dot(A-C, I-C)
-    if z < 0: 
-        B = camera_plane[2]
-        CA = A-C
-        AB = B-A
-        u = - (epsilon * np.linalg.norm(CA) + np.dot(n, CA)) / np.dot(AB,n)
-        valid_image_corners_3d[1] = (1-u) * A + u * B   
-        corners_2d[1] = [input_width, (1-u) * input_height]
 
-    # valid_image_corners_2d stores the 2d corners (in pixels) of the image 
-    # that give rays pointing
-    # towards the ceiling
+    # Adjust corner 1 if its ray points away from the ceiling
+    A = camera_plane[1]
+    I = plane_line_intersection(plane_equation, C, A)
+    if np.dot(A - C, I - C) < 0:
+        B = camera_plane[2]
+        CA = A - C
+        AB = B - A
+        u = - (epsilon * np.linalg.norm(CA) + np.dot(n, CA)) / np.dot(AB, n)
+        valid_image_corners_3d[1] = (1 - u) * A + u * B
+        corners_2d[1] = [input_width, (1 - u) * input_height]
+
+    # Save visible 2D corners
     valid_image_corners_2d.append(corners_2d)
 
-    # backprojections stores these corners after backprojection on the ceiling:
-    # after backprojection, we get 3d points
+    # Compute 3D backprojections of visible image corners onto the ceiling
     backprojection = []
     for j in range(4):
         I = plane_line_intersection(plane_equation, C, valid_image_corners_3d[j])
         backprojection.append(I)
     backprojections.append(backprojection)
 
-    
-#     # checking that all valid_image_corners_3d give rays that intersect the plane in *front* of the camera:
-#     for j in range(4):
-#         I = plane_line_intersection(plane_equation, C, backprojection[j])
-#         print(np.dot(backprojection[j]-C, I-C))
+    # Optional: Debug check that all backprojected points lie in front of the camera
+    # for j in range(4):
+    #     I = plane_line_intersection(plane_equation, C, backprojection[j])
+    #     print(np.dot(backprojection[j] - C, I - C))
