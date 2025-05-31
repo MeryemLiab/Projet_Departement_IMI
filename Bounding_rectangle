@@ -1,0 +1,129 @@
+def project_point_on_plane(plane_equation, M):
+    n = plane_equation[:3]
+    d = plane_equation[3]
+    u = -d - np.dot(M,n)
+    return M + u * n
+
+# I need to find a *2D* coordinate system on the plane
+
+robust_Xmin = np.min(ceiling_points[:, 0])
+robust_Xmax = np.max(ceiling_points[:, 0])
+robust_Ymin = np.min(ceiling_points[:, 1])
+robust_Ymax = np.max(ceiling_points[:, 1])
+robust_Zmin = np.min(ceiling_points[:, 2])
+robust_Zmax = np.max(ceiling_points[:, 2])
+
+
+# I take the center of the point cloud, which I reproject on the plane:
+O = [ 
+    (robust_Xmin + robust_Xmax)/2,
+    (robust_Ymin + robust_Ymax)/2,
+    (robust_Zmin + robust_Zmax)/2
+    ]
+O_rect = project_point_on_plane(plane_equation, O)
+
+# and 2 vectors on the bounding box, and reproject them on the plane as well:
+A = [ 
+     robust_Xmax,
+    (robust_Ymin + robust_Zmax)/2,
+    (robust_Zmin + robust_Zmax)/2
+    ]
+A = project_point_on_plane(plane_equation, A)
+
+B = [ 
+    (robust_Xmin + robust_Xmax)/2,
+     robust_Ymax,
+    (robust_Zmin + robust_Zmax)/2
+    ]
+B = project_point_on_plane(plane_equation, B)
+
+OA_rect = (A-O_rect) / np.linalg.norm(A-O_rect)
+OB_rect = (B-O_rect)
+OB_rect = OB_rect - np.dot(OA_rect,OB_rect) * OA_rect
+OB_rect = OB_rect / np.linalg.norm(OB_rect)
+
+# (O_rect, OA_rect, OB_rect) form a 2d coord system for the ceiling plane
+
+# Strategy 0 estimates the bounding rectangle based on the backprojection of the images onto the ceiling plane
+# Strategy 1 estimates the bounding rectangle based on the points on the ceiling
+
+strategy = 0
+
+if strategy == 0:
+    rectangle_xmin = float("inf")
+    rectangle_xmax = float("-inf")
+    rectangle_ymin = float("inf")
+    rectangle_ymax = float("-inf")
+
+    for i in range(5):
+        bp = backprojections[i]
+        for I in bp:
+            x = np.dot(I-O_rect,OA_rect)
+            if x < rectangle_xmin:
+                rectangle_xmin = x
+            if x > rectangle_xmax:
+                rectangle_xmax = x
+            y = np.dot(I-O_rect,OB_rect)
+            if y < rectangle_ymin:
+                rectangle_ymin = y
+            if y > rectangle_ymax:
+                rectangle_ymax = y
+    rectangle_2d = np.zeros((2,2))
+    rectangle_2d[0,:] = [rectangle_xmin, rectangle_ymin]
+    rectangle_2d[1,:] = [rectangle_xmax, rectangle_ymax]
+    print(rectangle_2d)
+    
+if strategy == 1:
+    xy = np.zeros((len(ceiling_points),2))
+    i = 0
+    for p in ceiling_points:
+        xy[i,0] = np.dot(p-O_rect,OA_rect)
+        xy[i,1] = np.dot(p-O_rect,OB_rect)
+        i = i + 1
+
+    rectangle_2d = np.zeros((2,2))
+    rectangle_2d[0,:] = [np.percentile(xy[:,0],1), np.percentile(xy[:,1],1)]
+    rectangle_2d[1,:] = [np.percentile(xy[:,0],99), np.percentile(xy[:,1],99)]
+    print(rectangle_2d)
+    # rectangle_2d[0,:] = [np.min(xy[:,0]), np.min(xy[:,1])]
+    # rectangle_2d[1,:] = [np.max(xy[:,0]), np.max(xy[:,1])]
+    # print(rectangle_2d)
+
+
+""" Visualizing the bounding rectangle and the input images backprojected on the ceiling plane, in the ceiling plane coord system"""
+
+colors = ['red', 'green', 'blue', 'yellow', 'cyan', 'magenta']
+
+fig, ax = plt.subplots()
+
+p_rect = patches.Rectangle(rectangle_2d[0], 
+                           rectangle_2d[1][0]-rectangle_2d[0][0], 
+                           rectangle_2d[1][1]-rectangle_2d[0][1], 
+                           linewidth=3, edgecolor='b', facecolor='none')
+ax.add_patch(p_rect)
+
+for i in range(k):  # where k is the number of images
+    cam = []
+    backprojection = backprojections[i]
+    for I in backprojection:
+        x = np.dot(I-O_rect,OA_rect)
+        y = np.dot(I-O_rect,OB_rect)
+        cam.append([x,y])
+    p_cam = patches.Polygon(cam, linewidth=1, edgecolor=colors[i%len(colors)], closed=True, fill=False)
+    ax.add_patch(p_cam)
+    
+# Sets the ranges to avoid distortion of the visualization:
+xmin = rectangle_2d[0,0]
+ymin = rectangle_2d[0,1]
+xmax = rectangle_2d[1,0]
+ymax = rectangle_2d[1,1]
+dx = xmax - xmin
+dy = ymax - ymin
+if dx > dy:
+    plt.xlim(xmin, xmax)
+    plt.ylim((ymin+ymax)/2 - dx/2, (ymin+ymax)/2 + dx/2)
+else:
+    plt.xlim((xmin+xmax)/2 - dy/2, (xmin+xmax)/2 + dy/2)
+    plt.ylim(ymin, ymax)
+    
+plt.show()
