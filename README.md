@@ -17,6 +17,8 @@ Once the rectified view is generated, automatic segmentation is applied to detec
 
 This project thus proposes a complete solution that combines 3D reconstruction, image rectification, and segmentation techniques to support automated ceiling analysis from multi-perspective images.
 
+![Pipeline](pipeline.jpg)
+
 
 **Relevance and Potential Applications :**
 
