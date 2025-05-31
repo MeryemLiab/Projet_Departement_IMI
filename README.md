@@ -5,7 +5,10 @@ Ceilings often contain a variety of technical components, including light fixtur
 To address these challenges, the project leveraged digital tools based on images captured on site to reliably assess the condition of ceiling components. This technological approach supports more sustainable renovation practices by enabling the identification, counting, and reuse of existing elements in a controlled and efficient manner.
 
 **Main Objective :**
+
 The study began with a technical observation: it is difficult to capture an entire ceiling in a single image suitable for automated detection of its various components. Standard cameras have a limited field of view, requiring multiple shots from different angles to cover the full surface. While 360° cameras provide a wider field of view, they introduce geometric distortions and pixel stretching, making the resulting images poorly suited for detection tasks.
+
+![objectif](prob.png)
 
 This project aims to design a pipeline capable of automatically generating a rectified, orthonormal view of the ceiling from images taken at different angles, in order to enable automatic segmentation of its components. The pipeline is structured around two main components:
 
